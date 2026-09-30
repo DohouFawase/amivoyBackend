@@ -1,0 +1,39 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class Budget extends Model
+{
+    use HasUuids, SoftDeletes;
+
+    protected $fillable = [
+        'trip_id',
+        'total_planned',
+        'currency',
+        'version',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'total_planned' => 'integer',
+            'version' => 'integer',
+        ];
+    }
+
+    public function trip(): BelongsTo
+    {
+        return $this->belongsTo(Trip::class, 'trip_id');
+    }
+
+    public function budgetLines(): HasMany
+    {
+        return $this->hasMany(BudgetLine::class, 'budget_id');
+    }
+}

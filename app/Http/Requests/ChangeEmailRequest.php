@@ -16,7 +16,7 @@ class ChangeEmailRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->user()->getKey()), function (string $attribute, mixed $value, \Closure $fail): void {
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->user()?->getKey()), function (string $attribute, mixed $value, \Closure $fail): void {
                 if ($value === $this->user()->email) {
                     $fail('Saisissez une nouvelle adresse e-mail.');
                 }

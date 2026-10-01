@@ -23,6 +23,7 @@ class ProfileSecurityTest extends TestCase
 
         $response = $this->patchJson('/api/v1/me', [
             'first_name' => 'Awa',
+            'last_name' => 'Kone',
             'platform_role' => 'admin',
             'status' => 'suspended',
             'email_verified' => false,
@@ -31,11 +32,15 @@ class ProfileSecurityTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.first_name', 'Awa')
+            ->assertJsonPath('data.last_name', 'Kone')
+            ->assertJsonMissingPath('data.firstName')
+            ->assertJsonMissingPath('data.lastName')
             ->assertJsonMissingPath('data.password_hash');
 
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
             'first_name' => 'Awa',
+            'last_name' => 'Kone',
             'platform_role' => 'user',
             'status' => 'active',
             'email_verified' => true,

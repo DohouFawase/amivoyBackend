@@ -13,6 +13,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 
 class PlaceController extends Controller
 {
@@ -51,48 +53,71 @@ class PlaceController extends Controller
             'category' => ['required', 'string', 'max:80'],
             'location' => ['sometimes', 'string', 'max:120'],
         ]);
-        $suggestions = [
-            'Hébergements' => [
-                ['Appartement lumineux', 'Appartement', '2 voyageurs · Wi-Fi · cuisine équipée · dès 18 000 XOF / nuit', '🏢'],
-                ['Studio des voyageurs', 'Studio', 'Quartier calme · climatisation · dès 24 000 XOF / nuit', '🛏️'],
-                ['Résidence avec terrasse', 'Résidence', '4 voyageurs · parking · dès 32 000 XOF / nuit', '🏡'],
-            ],
-            'Restaurants' => [
-                ['La Terrasse du marché', 'Restaurant', 'Cuisine locale · plats à partager · 10 000–16 000 XOF', '🍲'],
-                ['Café des voyageurs', 'Café', 'Petit-déjeuner · café · terrasse ombragée', '☕'],
-                ['Chez Awa', 'Restaurant', 'Spécialités maison · ambiance conviviale', '🥘'],
-            ],
-            'Culture' => [
-                ['Musée des cultures', 'Musée', 'Collections locales · visite 1 h 30', '🏛️'],
-                ['Place des artisans', 'Artisanat', 'Ateliers et créations fabriquées sur place', '🧵'],
-                ['Le quartier historique', 'Patrimoine', 'Architecture et histoire de la ville', '📷'],
-            ],
-            'Nature' => [
-                ['Jardin botanique', 'Nature', 'Promenade ombragée · idéal le matin', '🌿'],
-                ['La plage des pêcheurs', 'Plage', 'Coucher de soleil et pirogues colorées', '🏝️'],
-                ['Balade au bord de l’eau', 'Promenade', 'Parcours facile · environ 45 minutes', '🌊'],
-            ],
-            'À faire' => [
-                ['Visite guidée de la ville', 'Activité', 'Guide local · départ à 9 h et 15 h', '🧭'],
-                ['Marché central', 'Marché', 'Saveurs, tissus et artisanat local', '🧺'],
-                ['Atelier cuisine locale', 'Expérience', 'Découverte et dégustation · 2 heures', '🍋'],
-            ],
-        ];
-        $items = $suggestions[$data['category']] ?? $suggestions['À faire'];
-        $location = $data['location'] ?? 'ce quartier';
+        $category = mb_strtolower($data['category']);
+        $filters = match (true) {
+            str_contains($category, 'restaurant') => ['amenity' => ['restaurant', 'cafe', 'fast_food', 'bar', 'pub']],
+            str_contains($category, 'hébergement'), str_contains($category, 'hebergement') => ['tourism' => ['hotel', 'hostel', 'guest_house', 'apartment']],
+            str_contains($category, 'culture') => ['tourism' => ['museum', 'gallery', 'attraction']],
+            str_contains($category, 'nature') => ['leisure' => ['park', 'garden', 'nature_reserve']],
+            default => ['tourism' => ['attraction', 'museum', 'viewpoint']],
+        };
+        $cacheKey = 'places:osm:'.sha1(json_encode([
+            round((float) $data['latitude'], 3), round((float) $data['longitude'], 3), $filters,
+        ]));
 
-        return response()->json(['data' => array_map(
-            fn (array $item, int $index): array => [
-                'id' => 'demo-'.str($data['category'])->slug().'-'.$index,
-                'name' => $item[0],
-                'category' => $item[1],
-                'description' => $item[3].' '.$item[2],
-                'address' => 'À proximité de '.$location.' · adresse de démonstration',
-                'latitude' => (float) $data['latitude'] + ($index - 1) * 0.018,
-                'longitude' => (float) $data['longitude'] + ($index - 1) * 0.021,
-                'isMock' => true,
-            ], $items, array_keys($items),
-        )]);
+        $items = Cache::remember($cacheKey, now()->addHours(12), function () use ($data, $filters): array {
+            $conditions = [];
+            foreach ($filters as $key => $values) {
+                foreach ($values as $value) {
+                    $conditions[] = 'node["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
+                    $conditions[] = 'way["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
+                    $conditions[] = 'relation["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
+                }
+            }
+            $query = '[out:json][timeout:12];('.implode('', $conditions).');out center tags 40;';
+            $response = Http::timeout(15)
+                ->withHeaders(['User-Agent' => 'AmigoApp/1.0 (place discovery; contact the Amigo team)'])
+                ->asForm()
+                ->post(config('services.openstreetmap.overpass_url'), ['data' => $query]);
+            $response->throw();
+
+            return collect($response->json('elements', []))
+                ->filter(fn (array $place): bool => filled($place['tags']['name'] ?? null))
+                ->map(function (array $place): ?array {
+                    $tags = $place['tags'];
+                    $latitude = $place['lat'] ?? $place['center']['lat'] ?? null;
+                    $longitude = $place['lon'] ?? $place['center']['lon'] ?? null;
+                    if ($latitude === null || $longitude === null) {
+                        return null;
+                    }
+                    $address = collect([
+                        $tags['addr:housenumber'] ?? null,
+                        $tags['addr:street'] ?? null,
+                        $tags['addr:suburb'] ?? null,
+                        $tags['addr:city'] ?? null,
+                    ])->filter()->implode(', ');
+                    $type = $tags['amenity'] ?? $tags['tourism'] ?? $tags['leisure'] ?? 'place';
+
+                    return [
+                        'id' => 'osm-'.$place['type'].'-'.$place['id'],
+                        'name' => $tags['name'],
+                        'category' => str_replace('_', ' ', ucfirst($type)),
+                        'description' => $tags['cuisine'] ?? $tags['description'] ?? 'Établissement référencé dans OpenStreetMap.',
+                        'address' => $address ?: 'Adresse non renseignée dans OpenStreetMap',
+                        'latitude' => (float) $latitude,
+                        'longitude' => (float) $longitude,
+                        'source' => 'OpenStreetMap',
+                        'sourceUrl' => 'https://www.openstreetmap.org/'.$place['type'].'/'.$place['id'],
+                        'verificationStatus' => 'mapped',
+                        'verified' => false,
+                    ];
+                })
+                ->filter()
+                ->values()
+                ->all();
+        });
+
+        return response()->json(['data' => $items, 'meta' => ['source' => 'OpenStreetMap', 'attribution' => '© OpenStreetMap contributors']]);
     }
 
     public function store(StorePlaceRequest $request): PlaceResource

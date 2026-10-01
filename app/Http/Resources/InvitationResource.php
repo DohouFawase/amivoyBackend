@@ -16,6 +16,9 @@ class InvitationResource extends ApiResource
             ?? $this->resource->trip?->destination_label
             ?? $this->resource->circle?->name;
         $data['channelCode'] = $this->resource->channel;
+        if (array_key_exists('email_sent', $this->resource->getAttributes())) {
+            $data['email_sent'] = $this->resource->getAttribute('email_sent');
+        }
         $data['channelLabel'] = match ($this->resource->channel) {
             'whatsapp' => 'WhatsApp',
             'sms' => 'SMS',

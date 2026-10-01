@@ -11,10 +11,13 @@ use App\Models\Invitation;
 use App\Models\Outing;
 use App\Models\Trip;
 use App\Models\TripMember;
+use App\Notifications\InvitationCreatedNotification;
 use App\Support\GroupActivityWriter;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 
 class InvitationController extends Controller
@@ -45,9 +48,42 @@ class InvitationController extends Controller
             'status' => 'pending',
             'expires_at' => $attributes['expires_at'] ?? now()->addDays(14),
         ]);
-        $invitation->setAttribute('invite_url', 'amivoy://invite/'.$shareCode);
+        $appDeepLink = 'amivoy://invite/'.$shareCode;
+        $inviteUrl = $appDeepLink;
+        $appUrl = (string) config('app.url');
+        $appHost = parse_url($appUrl, PHP_URL_HOST);
+        $appScheme = parse_url($appUrl, PHP_URL_SCHEME);
+        $isIpAddress = is_string($appHost) && filter_var($appHost, FILTER_VALIDATE_IP) !== false;
+        $isPrivateIp = $isIpAddress && filter_var($appHost, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+        $isLocalHost = ! is_string($appHost) || in_array(strtolower($appHost), ['localhost', '127.0.0.1', '::1'], true);
+        if ($appScheme === 'https' && ! $isLocalHost && ! $isPrivateIp) {
+            $inviteUrl = route('invitations.open', ['code' => $shareCode]);
+        }
+        $invitation->setAttribute('invite_url', $appDeepLink);
+        $invitation->load(['recipient', 'outing', 'circle', 'trip']);
 
-        return new InvitationResource($invitation->load(['recipient', 'outing', 'circle', 'trip']));
+        $emailSent = null;
+        if ($invitation->channel === 'email' && $invitation->target !== null) {
+            $emailSent = false;
+            try {
+                Notification::route('mail', $invitation->target)->notify(new InvitationCreatedNotification(
+                    inviterName: $request->user()->first_name ?: $request->user()->email,
+                    groupName: $invitation->trip?->name ?? $invitation->outing?->title ?? $invitation->circle?->name ?? 'votre groupe',
+                    inviteUrl: $inviteUrl,
+                    appDeepLink: $appDeepLink,
+                    expiresAt: $invitation->expires_at->format('d/m/Y à H:i'),
+                ));
+                $emailSent = true;
+            } catch (\Throwable $exception) {
+                Log::warning('Invitation email delivery failed.', [
+                    'invitation_id' => $invitation->getKey(),
+                    'exception_class' => $exception::class,
+                ]);
+            }
+        }
+        $invitation->setAttribute('email_sent', $emailSent);
+
+        return new InvitationResource($invitation);
     }
 
     public function show(string $id): InvitationResource

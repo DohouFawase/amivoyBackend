@@ -16,12 +16,28 @@ class StoreInvitationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'trip_id' => ['required_without_all:outing_id,circle_id', 'prohibited_with:outing_id,circle_id', 'nullable', 'uuid', 'exists:trips,id'],
-            'outing_id' => ['required_without_all:trip_id,circle_id', 'prohibited_with:trip_id,circle_id', 'nullable', 'uuid', 'exists:outings,id'],
-            'circle_id' => ['required_without_all:trip_id,outing_id', 'prohibited_with:trip_id,outing_id', 'nullable', 'uuid', 'exists:circles,id'],
+            'trip_id' => ['required_without_all:outing_id,circle_id', 'nullable', 'uuid', 'exists:trips,id', function (string $attribute, mixed $value, \Closure $fail): void {
+                if ($this->filled('outing_id') || $this->filled('circle_id')) {
+                    $fail('Une invitation ne peut cibler qu’un seul voyage, cercle ou événement.');
+                }
+            }],
+            'outing_id' => ['required_without_all:trip_id,circle_id', 'nullable', 'uuid', 'exists:outings,id', function (string $attribute, mixed $value, \Closure $fail): void {
+                if ($this->filled('trip_id') || $this->filled('circle_id')) {
+                    $fail('Une invitation ne peut cibler qu’un seul voyage, cercle ou événement.');
+                }
+            }],
+            'circle_id' => ['required_without_all:trip_id,outing_id', 'nullable', 'uuid', 'exists:circles,id', function (string $attribute, mixed $value, \Closure $fail): void {
+                if ($this->filled('trip_id') || $this->filled('outing_id')) {
+                    $fail('Une invitation ne peut cibler qu’un seul voyage, cercle ou événement.');
+                }
+            }],
             'invited_by' => ['sometimes', 'nullable', 'uuid', 'exists:users,id'],
             'channel' => ['required', 'string', 'in:whatsapp,sms,email,link'],
-            'target' => 'sometimes|nullable|string',
+            'target' => ['required_if:channel,email', 'nullable', 'string', 'max:255', function (string $attribute, mixed $value, \Closure $fail): void {
+                if ($this->input('channel') === 'email' && filled($value) && ! filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                    $fail('Saisis une adresse e-mail valide pour envoyer l’invitation.');
+                }
+            }],
             'max_uses' => 'sometimes|nullable|integer',
             'use_count' => 'sometimes|nullable|integer',
             'recipient_user_id' => ['sometimes', 'nullable', 'uuid', 'exists:users,id'],

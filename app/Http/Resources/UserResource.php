@@ -12,9 +12,7 @@ class UserResource extends ApiResource
         return [
             'id' => $this->id,
             'first_name' => $this->first_name,
-            'firstName' => $this->first_name,
             'last_name' => $this->last_name,
-            'lastName' => $this->last_name,
             'email' => $this->email,
             'phone' => $this->phone,
             'avatar_url' => $this->avatar_url,
@@ -25,6 +23,7 @@ class UserResource extends ApiResource
             'phone_verified' => (bool) $this->phone_verified,
             'two_factor_enabled' => (bool) $this->two_factor_enabled,
             'status' => $this->status,
+            'platform_role' => $this->platform_role,
             'created_at' => $this->created_at,
         ];
     }

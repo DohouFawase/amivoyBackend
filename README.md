@@ -69,6 +69,8 @@ http://127.0.0.1:8000/docs/api
 
 Le document OpenAPI est exporté à `/api.json`. Les routes documentées sont celles de `api/v1`.
 
+Pour importer les opérations dans Postman, consulter [POSTMAN.md](POSTMAN.md). Pour le diagramme de cas d’utilisation, le parcours d’intégration recommandé et les critères de validation, consulter [BACKEND_USE_CASES.md](BACKEND_USE_CASES.md).
+
 ## Authentification et requêtes
 
 Les routes publiques d’authentification comprennent l’inscription, la connexion, le renouvellement de jeton, la vérification d’adresse e-mail, la récupération du mot de passe et la vérification du second facteur.

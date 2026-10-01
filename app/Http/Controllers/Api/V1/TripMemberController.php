@@ -15,7 +15,7 @@ class TripMemberController extends Controller
 {
     public function index(): AnonymousResourceCollection
     {
-        return TripMemberResource::collection(TripV1Access::scope(TripMember::query(), request()->user(), TripMember::class)->latest('created_at')->paginate(25));
+        return TripMemberResource::collection(TripV1Access::scope(TripMember::query(), request()->user(), TripMember::class)->with('user')->latest('created_at')->paginate(25));
     }
 
     public function store(StoreTripMemberRequest $request): TripMemberResource
@@ -28,12 +28,12 @@ class TripMemberController extends Controller
             }
         }
 
-        return new TripMemberResource(TripMember::create($attributes));
+        return new TripMemberResource(TripMember::create($attributes)->load('user'));
     }
 
     public function show(string $id): TripMemberResource
     {
-        $model = TripV1Access::scope(TripMember::query(), request()->user(), TripMember::class)->findOrFail($id);
+        $model = TripV1Access::scope(TripMember::query(), request()->user(), TripMember::class)->with('user')->findOrFail($id);
 
         return new TripMemberResource($model);
     }
@@ -43,7 +43,7 @@ class TripMemberController extends Controller
         $model = TripV1Access::scope(TripMember::query(), request()->user(), TripMember::class)->findOrFail($id);
         $model->update($request->validated());
 
-        return new TripMemberResource($model->refresh());
+        return new TripMemberResource($model->refresh()->load('user'));
     }
 
     public function destroy(string $id): Response

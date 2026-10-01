@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'openstreetmap' => [
+        'overpass_url' => env('OSM_OVERPASS_URL', 'https://overpass-api.de/api/interpreter'),
+    ],
+
 ];

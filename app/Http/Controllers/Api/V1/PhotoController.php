@@ -22,6 +22,17 @@ class PhotoController extends Controller
     {
         $attributes = $request->validated();
 
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+            $directory = isset($attributes['trip_id'])
+                ? 'trips/'.$attributes['trip_id']
+                : 'outings/'.$attributes['outing_id'];
+            $attributes['storage_key'] = $file->store($directory, 'public');
+            $attributes['mime_type'] = $file->getMimeType() ?? 'application/octet-stream';
+            $attributes['size_bytes'] = $file->getSize();
+            unset($attributes['image']);
+        }
+
         foreach (['user_id', 'creator_id', 'created_by', 'reporter_id', 'uploaded_by', 'invited_by', 'actor_id'] as $ownerField) {
             if (in_array($ownerField, (new Photo)->getFillable(), true)) {
                 $attributes[$ownerField] = $request->user()->id;

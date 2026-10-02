@@ -53,7 +53,7 @@ use App\Http\Controllers\Api\V1\UserSessionController;
 use App\Http\Controllers\TripNotificationController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->name('api.v1.')->group(function (): void {
+Route::prefix('v1')->name('api.v1.')->middleware('throttle:api')->group(function (): void {
     Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1')->name('auth.register');
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1')->name('auth.login');
     Route::post('/auth/refresh', [AuthController::class, 'refresh'])->middleware('throttle:10,1')->name('auth.refresh');
@@ -103,8 +103,8 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::apiResource('destination-proposals', DestinationProposalController::class)->parameters(['destination-proposals' => 'id'])->whereUuid('id');
         Route::apiResource('exclusion-requests', ExclusionRequestController::class)->parameters(['exclusion-requests' => 'id'])->whereUuid('id');
         Route::apiResource('reactions', ReactionController::class)->parameters(['reactions' => 'id'])->whereUuid('id');
-        Route::get('/places/search', [PlaceController::class, 'search'])->name('places.search');
-        Route::get('/places/nearby', [PlaceController::class, 'nearby'])->name('places.nearby');
+        Route::get('/places/search', [PlaceController::class, 'search'])->middleware('throttle:expensive-api')->name('places.search');
+        Route::get('/places/nearby', [PlaceController::class, 'nearby'])->middleware('throttle:expensive-api')->name('places.nearby');
         Route::get('/route-suggestions', [RouteSuggestionController::class, 'index'])->name('route-suggestions.index');
         Route::apiResource('places', PlaceController::class)->parameters(['places' => 'id'])->whereUuid('id');
         Route::apiResource('trip-places', TripPlaceController::class)->parameters(['trip-places' => 'id'])->whereUuid('id');

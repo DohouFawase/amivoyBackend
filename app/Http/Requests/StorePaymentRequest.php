@@ -25,7 +25,7 @@ class StorePaymentRequest extends FormRequest
             'currency' => 'sometimes|nullable|string',
             'status' => 'sometimes|nullable|string',
             'failure_reason' => 'sometimes|nullable|string',
-            'idempotency_key' => 'sometimes|nullable|string|unique:payments,idempotency_key',
+            'idempotency_key' => 'sometimes|nullable|string|max:128',
         ];
     }
 }

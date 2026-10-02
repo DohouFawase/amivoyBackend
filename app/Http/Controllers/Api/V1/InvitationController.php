@@ -141,6 +141,7 @@ class InvitationController extends Controller
         $invitation = Invitation::query()
             ->where('invited_by', request()->user()->getKey())
             ->findOrFail($id);
+        abort_if($invitation->status === 'accepted', 409, 'Une invitation acceptée ne peut plus être annulée ni supprimée.');
         $invitation->delete();
 
         return response()->noContent();

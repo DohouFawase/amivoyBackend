@@ -20,7 +20,7 @@ class StorePhotoRequest extends FormRequest
             'outing_id' => ['required_without:trip_id', 'nullable', 'uuid', 'exists:outings,id'],
             'uploaded_by' => ['sometimes', 'nullable', 'uuid', 'exists:users,id'],
             'storage_key' => ['required_without:image', 'nullable', 'string'],
-            'image' => ['required_without:storage_key', 'image', 'max:20480'],
+            'image' => ['required_without:storage_key', 'image', 'max:10240'],
             'thumbnail_key' => 'sometimes|nullable|string',
             'mime_type' => ['required_without:image', 'nullable', 'string'],
             'size_bytes' => 'sometimes|nullable|integer',

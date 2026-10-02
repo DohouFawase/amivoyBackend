@@ -161,7 +161,7 @@ class OutingController extends Controller
     public function addPhoto(Request $request, string $id): PhotoResource
     {
         $request->validate([
-            'image' => ['required', 'image', 'max:20480'],
+            'image' => ['required', 'image', 'max:10240'],
             'caption' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 

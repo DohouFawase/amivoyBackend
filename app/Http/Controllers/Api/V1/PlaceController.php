@@ -9,12 +9,15 @@ use App\Http\Resources\PlaceResource;
 use App\Models\Place;
 use App\Support\TripV1Access;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class PlaceController extends Controller
 {
@@ -65,57 +68,68 @@ class PlaceController extends Controller
             round((float) $data['latitude'], 3), round((float) $data['longitude'], 3), $filters,
         ]));
 
-        $items = Cache::remember($cacheKey, now()->addHours(12), function () use ($data, $filters): array {
-            $conditions = [];
-            foreach ($filters as $key => $values) {
-                foreach ($values as $value) {
-                    $conditions[] = 'node["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
-                    $conditions[] = 'way["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
-                    $conditions[] = 'relation["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
-                }
-            }
-            $query = '[out:json][timeout:12];('.implode('', $conditions).');out center tags 40;';
-            $response = Http::timeout(15)
-                ->withHeaders(['User-Agent' => 'AmigoApp/1.0 (place discovery; contact the Amigo team)'])
-                ->asForm()
-                ->post(config('services.openstreetmap.overpass_url'), ['data' => $query]);
-            $response->throw();
-
-            return collect($response->json('elements', []))
-                ->filter(fn (array $place): bool => filled($place['tags']['name'] ?? null))
-                ->map(function (array $place): ?array {
-                    $tags = $place['tags'];
-                    $latitude = $place['lat'] ?? $place['center']['lat'] ?? null;
-                    $longitude = $place['lon'] ?? $place['center']['lon'] ?? null;
-                    if ($latitude === null || $longitude === null) {
-                        return null;
+        try {
+            $items = Cache::remember($cacheKey, now()->addHours(12), function () use ($data, $filters): array {
+                $conditions = [];
+                foreach ($filters as $key => $values) {
+                    foreach ($values as $value) {
+                        $conditions[] = 'node["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
+                        $conditions[] = 'way["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
+                        $conditions[] = 'relation["'.$key.'"="'.$value.'"](around:5000,'.$data['latitude'].','.$data['longitude'].');';
                     }
-                    $address = collect([
-                        $tags['addr:housenumber'] ?? null,
-                        $tags['addr:street'] ?? null,
-                        $tags['addr:suburb'] ?? null,
-                        $tags['addr:city'] ?? null,
-                    ])->filter()->implode(', ');
-                    $type = $tags['amenity'] ?? $tags['tourism'] ?? $tags['leisure'] ?? 'place';
+                }
+                $query = '[out:json][timeout:12];('.implode('', $conditions).');out center tags 40;';
+                $response = Http::timeout(15)
+                    ->withHeaders(['User-Agent' => 'AmigoApp/1.0 (place discovery; contact the Amigo team)'])
+                    ->asForm()
+                    ->post(config('services.openstreetmap.overpass_url'), ['data' => $query]);
+                $response->throw();
 
-                    return [
-                        'id' => 'osm-'.$place['type'].'-'.$place['id'],
-                        'name' => $tags['name'],
-                        'category' => str_replace('_', ' ', ucfirst($type)),
-                        'description' => $tags['cuisine'] ?? $tags['description'] ?? 'Établissement référencé dans OpenStreetMap.',
-                        'address' => $address ?: 'Adresse non renseignée dans OpenStreetMap',
-                        'latitude' => (float) $latitude,
-                        'longitude' => (float) $longitude,
-                        'source' => 'OpenStreetMap',
-                        'sourceUrl' => 'https://www.openstreetmap.org/'.$place['type'].'/'.$place['id'],
-                        'verificationStatus' => 'mapped',
-                        'verified' => false,
-                    ];
-                })
-                ->filter()
-                ->values()
-                ->all();
-        });
+                return collect($response->json('elements', []))
+                    ->filter(fn (array $place): bool => filled($place['tags']['name'] ?? null))
+                    ->map(function (array $place): ?array {
+                        $tags = $place['tags'];
+                        $latitude = $place['lat'] ?? $place['center']['lat'] ?? null;
+                        $longitude = $place['lon'] ?? $place['center']['lon'] ?? null;
+                        if ($latitude === null || $longitude === null) {
+                            return null;
+                        }
+                        $address = collect([
+                            $tags['addr:housenumber'] ?? null,
+                            $tags['addr:street'] ?? null,
+                            $tags['addr:suburb'] ?? null,
+                            $tags['addr:city'] ?? null,
+                        ])->filter()->implode(', ');
+                        $type = $tags['amenity'] ?? $tags['tourism'] ?? $tags['leisure'] ?? 'place';
+
+                        return [
+                            'id' => 'osm-'.$place['type'].'-'.$place['id'],
+                            'name' => $tags['name'],
+                            'category' => str_replace('_', ' ', ucfirst($type)),
+                            'description' => $tags['cuisine'] ?? $tags['description'] ?? 'Établissement référencé dans OpenStreetMap.',
+                            'address' => $address ?: 'Adresse non renseignée dans OpenStreetMap',
+                            'latitude' => (float) $latitude,
+                            'longitude' => (float) $longitude,
+                            'source' => 'OpenStreetMap',
+                            'sourceUrl' => 'https://www.openstreetmap.org/'.$place['type'].'/'.$place['id'],
+                            'verificationStatus' => 'mapped',
+                            'verified' => false,
+                        ];
+                    })
+                    ->filter()
+                    ->values()
+                    ->all();
+            });
+        } catch (ConnectionException|RequestException $exception) {
+            Log::warning('OpenStreetMap place discovery failed.', [
+                'exception' => $exception::class,
+                'upstream_status' => $exception instanceof RequestException ? $exception->response->status() : null,
+            ]);
+
+            return response()->json([
+                'message' => 'La recherche de lieux est temporairement indisponible. Réessaie dans un instant.',
+            ], 503, ['Retry-After' => '60']);
+        }
 
         return response()->json(['data' => $items, 'meta' => ['source' => 'OpenStreetMap', 'attribution' => '© OpenStreetMap contributors']]);
     }

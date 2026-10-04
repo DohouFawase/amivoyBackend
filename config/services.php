@@ -39,4 +39,8 @@ return [
         'overpass_url' => env('OSM_OVERPASS_URL', 'https://overpass-api.de/api/interpreter'),
     ],
 
+    'geoapify' => [
+        'key' => env('GEOAPIFY_API_KEY'),
+    ],
+
 ];

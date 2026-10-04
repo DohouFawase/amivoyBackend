@@ -26,13 +26,33 @@ class PlaceController extends Controller
         return PlaceResource::collection(TripV1Access::scope(Place::query(), request()->user(), Place::class)->latest('created_at')->paginate(25));
     }
 
-    public function search(Request $request): AnonymousResourceCollection
+    public function search(Request $request): JsonResponse|AnonymousResourceCollection
     {
         $filters = $request->validate([
             'q' => ['required', 'string', 'min:2', 'max:120'],
             'country' => ['sometimes', 'nullable', 'string', 'max:120'],
             'limit' => ['sometimes', 'integer', 'between:1,50'],
         ]);
+
+        if (app(\App\Services\GeoapifyPlaceDiscovery::class)->isConfigured()) {
+            try {
+                $places = app(\App\Services\GeoapifyPlaceDiscovery::class)->search(
+                    $filters['q'],
+                    $filters['country'] ?? null,
+                    $filters['limit'] ?? 8,
+                );
+
+                return response()->json(['data' => $places, 'meta' => ['source' => 'Geoapify']]);
+            } catch (ConnectionException|RequestException $exception) {
+                Log::warning('Geoapify place search failed.', [
+                    'exception' => $exception::class,
+                    'upstream_status' => $exception instanceof RequestException ? $exception->response->status() : null,
+                ]);
+
+                return response()->json(['message' => 'La recherche de destinations est temporairement indisponible. Réessaie dans un instant.'], 503, ['Retry-After' => '60']);
+            }
+        }
+
         $query = Place::query()->where(function (Builder $query) use ($filters): void {
             $term = '%'.addcslashes($filters['q'], '%_\\').'%';
             $query->where('name', 'like', $term)
@@ -56,6 +76,29 @@ class PlaceController extends Controller
             'category' => ['required', 'string', 'max:80'],
             'location' => ['sometimes', 'string', 'max:120'],
         ]);
+
+        if (app(\App\Services\GeoapifyPlaceDiscovery::class)->isConfigured()) {
+            try {
+                $places = app(\App\Services\GeoapifyPlaceDiscovery::class)->nearby(
+                    (float) $data['latitude'],
+                    (float) $data['longitude'],
+                    $data['category'],
+                );
+
+                return response()->json(['data' => $places, 'meta' => [
+                    'source' => 'Geoapify',
+                    'attribution' => 'Geoapify · données cartographiques OpenStreetMap et sources associées',
+                ]]);
+            } catch (ConnectionException|RequestException $exception) {
+                Log::warning('Geoapify nearby place discovery failed.', [
+                    'exception' => $exception::class,
+                    'upstream_status' => $exception instanceof RequestException ? $exception->response->status() : null,
+                ]);
+
+                return response()->json(['message' => 'La recherche de lieux est temporairement indisponible. Réessaie dans un instant.'], 503, ['Retry-After' => '60']);
+            }
+        }
+
         $category = mb_strtolower($data['category']);
         $filters = match (true) {
             str_contains($category, 'restaurant') => ['amenity' => ['restaurant', 'cafe', 'fast_food', 'bar', 'pub']],
